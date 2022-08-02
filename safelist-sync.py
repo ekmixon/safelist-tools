@@ -61,7 +61,7 @@ def write_object(filename, generic_object):
 		with open(filename, "wb") as write_h:
 			write_h.write(generic_object.encode('utf-8'))
 	except:
-		sys.stderr.write("Problem writing " + filename + ", skipping.")
+		sys.stderr.write(f"Problem writing {filename}, skipping.")
 		raise
 
 	#return
@@ -76,16 +76,14 @@ def mkdir_p(path):
 		except FileExistsError:
 			pass
 		except OSError as exc:
-			if exc.errno == errno.EEXIST and os.path.isdir(path):
-				pass
-			else:
+			if exc.errno != errno.EEXIST or not os.path.isdir(path):
 				raise
 
 
 def cache_file(parent_cache_dir, host_string):
 	"""Returns the correct filename that would hold the whitelist for that host string.  Does not care if the file exists or not, but does create the directory that would hold it."""
 
-	cache_obj_path = parent_cache_dir + '/'
+	cache_obj_path = f'{parent_cache_dir}/'
 
 	mkdir_p(cache_obj_path)
 
@@ -97,33 +95,30 @@ def api_call(target_url, verb, data_block):
 
 	api_response = None
 
-	debug_out('API Request: ' + str(verb) + ' ' + str(target_url))
+	debug_out(f'API Request: {str(verb)} {str(target_url)}')
 	try:
 		if verb == 'GET':
 			api_response = requests.get(target_url, timeout=30)
 		elif verb == 'POST':
 			api_response = requests.post(target_url, timeout=30, headers={'Content-Type': 'application/json'}, data=data_block)
 		else:
-			fail('Unhandled verb: ' + str(verb))
+			fail(f'Unhandled verb: {str(verb)}')
 	except requests.exceptions.InvalidSchema:
-		debug_out('InvalidSchema retrieving ' + str(target_url))
-	#From urllib3
-	#except LocationValueError:
-	#	debug_out('LocationValueError retrieving ' + str(target_url))
+		debug_out(f'InvalidSchema retrieving {str(target_url)}')
 	except requests.exceptions.InvalidURL:
-		debug_out('Invalid label retrieving ' + str(target_url))
+		debug_out(f'Invalid label retrieving {str(target_url)}')
 	except requests.exceptions.ReadTimeout:
-		debug_out('Timeout retrieving ' + str(target_url))
+		debug_out(f'Timeout retrieving {str(target_url)}')
 	except requests.exceptions.TooManyRedirects:
-		debug_out('Too many redirects retrieving ' + str(target_url))
+		debug_out(f'Too many redirects retrieving {str(target_url)}')
 	except requests.exceptions.SSLError:
-		debug_out('SSL certificate error retrieving ' + str(target_url))
+		debug_out(f'SSL certificate error retrieving {str(target_url)}')
 	except requests.exceptions.ConnectionError:
-		debug_out('Connection error retrieving ' + str(target_url))
+		debug_out(f'Connection error retrieving {str(target_url)}')
 	except UnicodeError:
-		debug_out('Unicode error retrieving ' + str(target_url))
+		debug_out(f'Unicode error retrieving {str(target_url)}')
 	except requests.exceptions.ContentDecodingError:
-		debug_out('Decoding/gzip error retrieving ' + str(target_url))
+		debug_out(f'Decoding/gzip error retrieving {str(target_url)}')
 
 	return api_response
 
@@ -135,19 +130,19 @@ def get_whitelists(host_list):
 
 	for one_host in host_list:
 		if one_host:
-			api_ret = api_call('http://' + str(one_host) + '/api/v0/empire/whitelist/export', 'GET', None)
-			if api_ret:
+			if api_ret := api_call(
+				f'http://{str(one_host)}/api/v0/empire/whitelist/export', 'GET', None
+			):
 				if api_ret.status_code == 200:
-					host_whitelist = api_ret.json()					#Don't need json.loads() around it, it autoconverts to a python list.
-					if host_whitelist:
-						debug_out('Whitelist for ' + str(one_host) + ' has ' + str(len(host_whitelist)) + ' entries.')
+					if host_whitelist := api_ret.json():
+						debug_out(f'Whitelist for {str(one_host)} has {len(host_whitelist)} entries.')
 						host_whitelists[one_host] = host_whitelist
 					else:
-						debug_out('Empty host whitelist for ' + str(one_host))
+						debug_out(f'Empty host whitelist for {str(one_host)}')
 				else:
-					debug_out('Status code for ' + str(one_host) + ' is ' + str(api_ret.status_code))
+					debug_out(f'Status code for {str(one_host)} is {str(api_ret.status_code)}')
 			elif api_ret is None:
-				debug_out(str(one_host) + ' returned None ')
+				debug_out(f'{str(one_host)} returned None ')
 
 	return host_whitelists
 
@@ -155,25 +150,27 @@ def get_whitelists(host_list):
 def filter_by_comment(whitelist_tree, comment_filter):
 	"""From a given whitelist tree, pull out _just_ the ones that have the comment_filter in the 'comment' value."""
 
-	if not comment_filter:										# pylint: disable=no-else-return
+	if not comment_filter:
 		#comment_filter is empty, so no filtering requested.  Return the original structure.
 		return whitelist_tree
-	else:
-		#There is a requested comment filter, so we need to filter by comment and return the filtered tree.
-		lowercase_comment_filter = comment_filter.lower()
+	#There is a requested comment filter, so we need to filter by comment and return the filtered tree.
+	lowercase_comment_filter = comment_filter.lower()
 
-		filtered_tree = {}
+	filtered_tree = {}
 
-		for one_host in whitelist_tree:
-			filtered_tree[one_host] = []
-			for one_white_entry in whitelist_tree[one_host]:
-				if 'comment' in one_white_entry and one_white_entry['comment'] is not None and one_white_entry['comment'].lower().find(lowercase_comment_filter) != -1:		#Comment filter string found
-					filtered_tree[one_host].append(one_white_entry)
-			debug_out('(Only ' + str(len(filtered_tree[one_host])) + ' entries remain for ' + str(one_host) + ' after filtering.)')
+	for one_host in whitelist_tree:
+		filtered_tree[one_host] = []
+		for one_white_entry in whitelist_tree[one_host]:
+			if 'comment' in one_white_entry and one_white_entry['comment'] is not None and one_white_entry['comment'].lower().find(lowercase_comment_filter) != -1:		#Comment filter string found
+				filtered_tree[one_host].append(one_white_entry)
+		debug_out(
+			f'(Only {len(filtered_tree[one_host])} entries remain for {str(one_host)} after filtering.)'
+		)
 
-		#debug_out(str(filtered_tree))
 
-		return filtered_tree
+	#debug_out(str(filtered_tree))
+
+	return filtered_tree
 
 
 
@@ -205,17 +202,23 @@ def gen_host_additions(combined_whitelist, this_host_whitelist):
 def push_changes(target_host, entries_to_add):
 	"""Send these changes back to the specific host."""
 
-	debug_out('Intend to push ' + str(len(entries_to_add)) + ' entries to host ' + str(target_host))
+	debug_out(
+		f'Intend to push {len(entries_to_add)} entries to host {str(target_host)}'
+	)
 
-	api_ret = api_call('http://' + str(target_host) + '/api/v0/empire/whitelist/import', 'POST', json.dumps(entries_to_add))
-	if api_ret:
+
+	if api_ret := api_call(
+		f'http://{str(target_host)}/api/v0/empire/whitelist/import',
+		'POST',
+		json.dumps(entries_to_add),
+	):
 		if api_ret.status_code == 201:
 			debug_out('Import appeared successful.')
 		else:
-			debug_out('Status code for ' + str(target_host) + ' is ' + str(api_ret.status_code))
+			debug_out(f'Status code for {str(target_host)} is {str(api_ret.status_code)}')
 		debug_out(str(api_ret.text))
 	elif api_ret is None:
-		debug_out(str(target_host) + ' returned None ')
+		debug_out(f'{str(target_host)} returned None ')
 	else:
 		debug_out('Unknown return from post.')
 
@@ -224,8 +227,8 @@ def cache_whitelists(top_dir, whitelist_dict):
 	"""Loop through each of the whitelists in the dict and save them under the host ID on disk."""
 
 	for one_host in whitelist_dict:
-		if whitelist_dict[one_host]:			#Don't write out an empty dictionary - this may mean we weren't able to retrieve it.
-			debug_out('Writing cache file for ' + str(one_host))
+		if whitelist_dict[one_host]:#Don't write out an empty dictionary - this may mean we weren't able to retrieve it.
+			debug_out(f'Writing cache file for {str(one_host)}')
 			write_object(cache_file(top_dir, one_host), json.dumps(whitelist_dict[one_host]))
 
 
@@ -233,15 +236,19 @@ def process_whitelist_adds(master_whitelist, whitelist_dict):
 	"""For each host, individually find a list of whitelist entries that need to be added and add them."""
 
 	for one_ac_host in whitelist_dict:
-		host_additions = gen_host_additions(master_whitelist, whitelist_dict[one_ac_host])
-		if host_additions:
-			debug_out(str(len(host_additions)) + ' unique changes to send to ' + str(one_ac_host))
+		if host_additions := gen_host_additions(
+			master_whitelist, whitelist_dict[one_ac_host]
+		):
+			debug_out(
+				f'{len(host_additions)} unique changes to send to {str(one_ac_host)}'
+			)
+
 			if cl_args['dryrun']:
 				debug_out('Changes will not be sent (dryrun mode)')
 			else:
 				push_changes(one_ac_host, host_additions)
 		else:
-			debug_out('No changes needed for host ' + str(one_ac_host))
+			debug_out(f'No changes needed for host {str(one_ac_host)}')
 
 
 
@@ -252,7 +259,10 @@ whitelist_cache_dir = os.environ["HOME"] + '/.cache/safelist-sync/'
 if __name__ == '__main__':
 	import argparse
 
-	parser = argparse.ArgumentParser(description='safelist-sync version ' + str(__version__))
+	parser = argparse.ArgumentParser(
+		description=f'safelist-sync version {str(__version__)}'
+	)
+
 	parser.add_argument('-s', '--sources', help='System(s) that both provide and receive whitelist entries. Should be host:port', required=False, default=[], nargs='*')
 	parser.add_argument('-r', '--recipients', help='System(s) that only receive whitelist entries', required=False, default=[], nargs='*')
 	parser.add_argument('-f', '--filter', help='Text that must be in the comment field (case insensitive), otherwise that whitelist entry is ignored', required=False, default='')
